@@ -167,7 +167,7 @@ class ObjectManager {
 
         bool HasImplObject(v8::Isolate* isolate, const v8::Local<v8::Object>& obj);
 
-        void MarkReachableObjects(v8::Isolate* isolate, const v8::Local<v8::Object>& obj);
+        void MarkReachableObjects(v8::Isolate* isolate, const v8::Local<v8::Object>& obj, const v8::Local<v8::String>& propName, const v8::Local<v8::Integer>& curGCNumValue);
 
         void OnGcStarted(v8::GCType type, v8::GCCallbackFlags flags);
 

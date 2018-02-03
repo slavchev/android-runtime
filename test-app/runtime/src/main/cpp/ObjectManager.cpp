@@ -337,7 +337,7 @@ void ObjectManager::JSObjectWeakCallback(Isolate* isolate, ObjectWeakCallbackSta
         m_visitedPOs.insert(po);
 
         auto obj = Local<Object>::New(isolate, *po);
-        JSInstanceInfo* jsInstanceInfo = GetJSInstanceInfo(obj);
+        auto jsInstanceInfo = callbackState->jsInfo;
         int javaObjectID = jsInstanceInfo->JavaObjectID;
 
         bool hasImplObj = HasImplObject(isolate, obj);
@@ -452,22 +452,15 @@ bool ObjectManager::HasImplObject(Isolate* isolate, const Local<Object>& obj) {
  * When "MarkReachableObjects" is called V8 has marked all JS objects that can be released.
  * This method builds on top of V8s marking phase, because we need to consider the JAVA counterpart objects (is it "regular" or "callback"), when marking JS ones.
  * */
-void ObjectManager::MarkReachableObjects(Isolate* isolate, const Local<Object>& obj) {
+void ObjectManager::MarkReachableObjects(Isolate* isolate, const Local<Object>& obj, const Local<String>& propName, const Local<Integer>& curGCNumValue) {
     tns::instrumentation::Frame frame;
 
     stack<Local<Value>> s;
 
     s.push(obj);
 
-    auto propName = String::NewFromUtf8(isolate, "t::gcNum");
-
-    assert(!m_markedForGC.empty());
-    auto& topGCInfo = m_markedForGC.top();
-    int numberOfGC = topGCInfo.numberOfGC;
     auto fromJsInfo = GetJSInstanceInfo(obj);
     auto fromId = fromJsInfo->JavaObjectID;
-
-    auto curGCNumValue = Integer::New(isolate, numberOfGC);
 
     while (!s.empty()) {
         auto top = s.top();
@@ -643,17 +636,23 @@ void ObjectManager::OnGcStarted(GCType type, GCCallbackFlags flags) {
 void ObjectManager::OnGcFinished(GCType type, GCCallbackFlags flags) {
     assert(!m_markedForGC.empty());
 
-    //deal with all "callback" objects
     auto isolate = m_isolate;
+
+    auto& topGCInfo = m_markedForGC.top();
+    int numberOfGC = topGCInfo.numberOfGC;
+    auto propName = String::NewFromUtf8(isolate, "t::gcNum");
+    auto curGCNumValue = Integer::New(isolate, numberOfGC);
+
+    //deal with all "callback" objects
     for (auto weakObj : m_implObjWeak) {
         auto obj = Local<Object>::New(isolate, *weakObj.po);
-        MarkReachableObjects(isolate, obj);
+        MarkReachableObjects(isolate, obj, propName, curGCNumValue);
     }
     for (const auto& kv : m_implObjStrong) {
         Persistent<Object>* po = kv.second;
         if (po != nullptr) {
             auto obj = Local<Object>::New(isolate, *po);
-            MarkReachableObjects(isolate, obj);
+            MarkReachableObjects(isolate, obj, propName, curGCNumValue);
         }
     }
 
