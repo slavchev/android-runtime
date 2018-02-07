@@ -12,6 +12,9 @@
 #include <stack>
 #include <vector>
 #include <string>
+//
+#import <chrono>
+#include <ctime>
 
 namespace tns {
 class ObjectManager {
@@ -75,7 +78,16 @@ class ObjectManager {
 
     private:
 
-        struct JSInstanceInfo {
+        int64_t t_total;
+        int64_t t_mark1, t_mark2;
+        int64_t t_weak;
+        int64_t t_releaseReg;
+        int64_t t_walk;
+        std::chrono::high_resolution_clock::time_point t_start, t_end;
+        int64_t mark_c1, mark_c2;
+
+
+    struct JSInstanceInfo {
             public:
                 JSInstanceInfo(bool isJavaObjectWeak, uint32_t javaObjectID, jclass claz)
                     :IsJavaObjectWeak(isJavaObjectWeak), JavaObjectID(javaObjectID), ObjectClazz(claz) {

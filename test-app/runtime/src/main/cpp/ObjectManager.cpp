@@ -23,6 +23,12 @@ ObjectManager::ObjectManager(jobject javaRuntimeObject) :
     m_numberOfGC(0),
     m_currentObjectId(0),
     m_cache(NewWeakGlobalRefCallback, DeleteWeakGlobalRefCallback, 1000, this) {
+    t_total = 0;
+    t_mark1 = t_mark2 = 0;
+    t_weak = 0;
+    t_releaseReg = 0;
+    t_walk = 0;
+    mark_c1 = mark_c2 = 0;
 
     auto runtimeClass = m_env.FindClass("com/tns/Runtime");
     assert(runtimeClass != nullptr);
@@ -327,6 +333,8 @@ void ObjectManager::JSObjectFinalizer(Isolate* isolate, ObjectWeakCallbackState*
  *	These objects are categorized by "regular" and "callback" and saved in different arrays for performance optimizations during GC
  * */
 void ObjectManager::JSObjectWeakCallback(Isolate* isolate, ObjectWeakCallbackState* callbackState) {
+    auto t1  = std::chrono::high_resolution_clock::now();
+
     HandleScope handleScope(isolate);
 
     Persistent<Object>* po = callbackState->target;
@@ -359,6 +367,10 @@ void ObjectManager::JSObjectWeakCallback(Isolate* isolate, ObjectWeakCallbackSta
     }
 
     po->SetWeak(callbackState, JSObjectWeakCallbackStatic, WeakCallbackType::kFinalizer);
+
+    auto t2  = std::chrono::high_resolution_clock::now();
+    auto d1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+    t_walk += d1;
 }
 
 int ObjectManager::GenerateNewObjectID() {
@@ -470,6 +482,8 @@ void ObjectManager::MarkReachableObjects(Isolate* isolate, const Local<Object>& 
             continue;
         }
 
+        ++mark_c1;
+
         auto o = top.As<Object>();
 
         auto jsInfo = GetJSInstanceInfo(o);
@@ -488,6 +502,7 @@ void ObjectManager::MarkReachableObjects(Isolate* isolate, const Local<Object>& 
         uint8_t* addr = NativeScriptExtension::GetAddress(o);
         auto itFound = m_visited.find(addr);
         if (itFound != m_visited.end()) {
+            ++mark_c2;
             continue;
         }
         m_visited.insert(addr);
@@ -625,6 +640,9 @@ void ObjectManager::OnGcFinishedStatic(Isolate* isolate, GCType type, GCCallback
 
 void ObjectManager::OnGcStarted(GCType type, GCCallbackFlags flags) {
     TNSPERF();
+    if (m_markedForGC.empty()) {
+        t_start = std::chrono::high_resolution_clock::now();
+    }
 
     GarbageCollectionInfo gcInfo(++m_numberOfGC);
     m_markedForGC.push(gcInfo);
@@ -643,11 +661,13 @@ void ObjectManager::OnGcFinished(GCType type, GCCallbackFlags flags) {
     auto propName = String::NewFromUtf8(isolate, "t::gcNum");
     auto curGCNumValue = Integer::New(isolate, numberOfGC);
 
+    auto t1 = std::chrono::high_resolution_clock::now();
     //deal with all "callback" objects
     for (auto weakObj : m_implObjWeak) {
         auto obj = Local<Object>::New(isolate, *weakObj.po);
         MarkReachableObjects(isolate, obj, propName, curGCNumValue);
     }
+    auto t2 = std::chrono::high_resolution_clock::now();
     for (const auto& kv : m_implObjStrong) {
         Persistent<Object>* po = kv.second;
         if (po != nullptr) {
@@ -655,18 +675,31 @@ void ObjectManager::OnGcFinished(GCType type, GCCallbackFlags flags) {
             MarkReachableObjects(isolate, obj, propName, curGCNumValue);
         }
     }
+    auto t3 = std::chrono::high_resolution_clock::now();
+    auto d1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+    auto d2 = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
+    t_mark1 += d1;
+    t_mark2 += d2;
 
-    //deal with regular objects
+    t1  = std::chrono::high_resolution_clock::now();
     ReleaseRegularObjects();
+    t2  = std::chrono::high_resolution_clock::now();
+    d1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+    t_releaseReg += d1;
+
 
     m_markedForGC.pop();
 
     if (m_markedForGC.empty()) {
+        t1 = std::chrono::high_resolution_clock::now();
         MakeRegularObjectsWeak(m_released.m_IDs, m_buff);
 
         MakeImplObjectsWeak(m_implObjStrong, m_buff);
 
         CheckWeakObjectsAreAlive(m_implObjWeak, m_buff, m_outBuff);
+        t2 = std::chrono::high_resolution_clock::now();
+        d1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+        t_weak += d1;
 
         m_buff.Reset();
         m_released.clear();
@@ -674,6 +707,12 @@ void ObjectManager::OnGcFinished(GCType type, GCCallbackFlags flags) {
         m_visitedPOs.clear();
         m_implObjWeak.clear();
         m_implObjStrong.clear();
+        //
+        t_end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+        t_total += duration;
+        int64_t t_mark = t_mark1 + t_mark2;
+        DEBUG_WRITE_FORCE("GC_TOTAL: total: %lld, mark: %lld (%lld + %lld), weak: %lld, releaseReg: %lld, walk: %lld, mark_c (%lld, %lld)", t_total, t_mark, t_mark1, t_mark2, t_weak, t_releaseReg, t_walk, mark_c1, mark_c2);
     }
 }
 
