@@ -84,11 +84,11 @@ jstring ArgConverter::ObjectToString(jobject object) {
     return (jstring) object;
 }
 
-Local<Array> ArgConverter::ConvertJavaArgsToJsArgs(Isolate* isolate, jobjectArray args) {
+void ArgConverter::ConvertJavaArgsToJsArgs(Isolate* isolate, jobjectArray args, vector<Local<Value>>& arr) {
     JEnv env;
 
     int argc = env.GetArrayLength(args) / 3;
-    Local<Array> arr(Array::New(isolate, argc));
+    arr.reserve(argc);
 
     auto runtime = Runtime::GetRuntime(isolate);
     auto objectManager = runtime->GetObjectManager();
@@ -146,10 +146,8 @@ Local<Array> ArgConverter::ConvertJavaArgsToJsArgs(Isolate* isolate, jobjectArra
             break;
         }
 
-        arr->Set(i, jsArg);
+        arr.push_back(jsArg);
     }
-
-    return arr;
 }
 
 std::string ArgConverter::jstringToString(jstring value) {

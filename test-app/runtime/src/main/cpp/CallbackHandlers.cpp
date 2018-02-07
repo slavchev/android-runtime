@@ -768,19 +768,14 @@ Local<Value> CallbackHandlers::CallJSMethod(Isolate* isolate, JNIEnv* _env,
         EscapableHandleScope handleScope(isolate);
 
         auto jsMethod = method.As<Function>();
-        auto jsArgs = ArgConverter::ConvertJavaArgsToJsArgs(isolate, args);
-        int argc = jsArgs->Length();
-
-        std::vector<Local<Value>> arguments(argc);
-        for (int i = 0; i < argc; i++) {
-            arguments[i] = jsArgs->Get(i);
-        }
+        vector<Local<Value>> jsArgs;
+        ArgConverter::ConvertJavaArgsToJsArgs(isolate, args, jsArgs);
 
         TryCatch tc;
         Local<Value> jsResult;
         {
             SET_PROFILER_FRAME();
-            jsResult = jsMethod->Call(jsObject, argc, argc == 0 ? nullptr : arguments.data());
+            jsResult = jsMethod->Call(jsObject, jsArgs.size(), jsArgs.size() == 0 ? nullptr : jsArgs.data());
         }
 
         //TODO: if javaResult is a pure js object create a java object that represents this object in java land

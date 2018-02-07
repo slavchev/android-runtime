@@ -18,7 +18,7 @@ class ArgConverter {
     public:
         static void Init(v8::Isolate* isolate);
 
-        static v8::Local<v8::Array> ConvertJavaArgsToJsArgs(v8::Isolate* isolate, jobjectArray args);
+        static void ConvertJavaArgsToJsArgs(v8::Isolate* isolate, jobjectArray args, std::vector<v8::Local<v8::Value>>& arr);
 
         static v8::Local<v8::Value> ConvertFromJavaLong(v8::Isolate* isolate, jlong value);
 
